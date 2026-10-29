@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+    <rect width="1080" height="1080" fill="#0B132B"/>
+    <text x="100" y="200" fill="#48CAE4" font-size="54" font-family="sans-serif" font-weight="bold">CloudNova Enterprise Platform</text>
+    <text x="100" y="320" fill="#FFFFFF" font-size="44" font-family="sans-serif">Starting at $79/mo billed annually</text>
+    <text x="100" y="440" fill="#90E0EF" font-size="38" font-family="sans-serif">99.999% SLA Uptime Guarantee</text>
+    <text x="100" y="560" fill="#FFFFFF" font-size="34" font-family="sans-serif">30-day free trial with full API access</text>
+  </svg>

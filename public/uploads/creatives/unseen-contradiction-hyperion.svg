@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080">
+  <defs>
+    <linearGradient id="bg-hy" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#171717"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="url(#bg-hy)"/>
+  <rect x="60" y="60" width="960" height="960" rx="24" fill="none" stroke="#262626" stroke-width="2"/>
+  <text x="540" y="190" font-family="system-ui, sans-serif" font-size="46" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="3">HYPERION MOTORS</text>
+  <text x="540" y="250" font-family="system-ui, sans-serif" font-size="24" font-weight="600" fill="#38bdf8" text-anchor="middle">HORIZON GT ELECTRIC SEDAN</text>
+  <rect x="120" y="320" width="840" height="440" rx="16" fill="#171717" stroke="#404040" stroke-width="1.5"/>
+  <text x="540" y="400" font-family="system-ui, sans-serif" font-size="32" font-weight="700" fill="#ffffff" text-anchor="middle">520 miles range on a single charge</text>
+  <text x="540" y="480" font-family="system-ui, sans-serif" font-size="32" font-weight="700" fill="#38bdf8" text-anchor="middle">FLAT $8,000 Federal &amp; Dealer Rebate</text>
+  <text x="540" y="560" font-family="system-ui, sans-serif" font-size="32" font-weight="700" fill="#facc15" text-anchor="middle">8-year battery warranty</text>
+  <text x="540" y="640" font-family="system-ui, sans-serif" font-size="32" font-weight="700" fill="#4ade80" text-anchor="middle">Fast 15-minute DC charging</text>
+  <text x="540" y="710" font-family="system-ui, sans-serif" font-size="22" font-weight="400" fill="#a3a3a3" text-anchor="middle">EPA estimated range. Subject to dealer terms.</text>
+  <rect x="340" y="820" width="400" height="70" rx="35" fill="#0284c7"/>
+  <text x="540" y="865" font-family="system-ui, sans-serif" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">RESERVE HORIZON GT</text>
+</svg>

@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.next/
+.checkpoint_*
+.backup_*
+tsconfig.tsbuildinfo
+.DS_Store
+*.log
+.env*
+!.env.example

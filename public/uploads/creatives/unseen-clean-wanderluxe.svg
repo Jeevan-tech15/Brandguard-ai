@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080">
+  <defs>
+    <linearGradient id="bg-wl" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="url(#bg-wl)"/>
+  <rect x="60" y="60" width="960" height="960" rx="24" fill="none" stroke="#334155" stroke-width="2"/>
+  <text x="540" y="220" font-family="system-ui, sans-serif" font-size="44" font-weight="800" fill="#f8fafc" text-anchor="middle" letter-spacing="3">WANDERLUXE ESCAPES</text>
+  <text x="540" y="280" font-family="system-ui, sans-serif" font-size="22" font-weight="500" fill="#94a3b8" text-anchor="middle">CURATED LUXURY EXPEDITIONS</text>
+  <rect x="140" y="360" width="800" height="380" rx="16" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+  <text x="540" y="440" font-family="system-ui, sans-serif" font-size="28" font-weight="600" fill="#e2e8f0" text-anchor="middle">Handcrafted boutique journeys across Europe &amp; Asia</text>
+  <text x="540" y="520" font-family="system-ui, sans-serif" font-size="26" font-weight="500" fill="#cbd5e1" text-anchor="middle">Complimentary daily breakfast and private concierge</text>
+  <text x="540" y="600" font-family="system-ui, sans-serif" font-size="26" font-weight="500" fill="#cbd5e1" text-anchor="middle">Tailored five-star boutique accommodations</text>
+  <text x="540" y="670" font-family="system-ui, sans-serif" font-size="22" font-weight="400" fill="#94a3b8" text-anchor="middle">Verified member of International Luxury Hotel Association</text>
+  <rect x="340" y="800" width="400" height="70" rx="35" fill="#0f766e"/>
+  <text x="540" y="845" font-family="system-ui, sans-serif" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">EXPLORE ITINERARIES</text>
+</svg>

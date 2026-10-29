@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080">
+  <defs>
+    <linearGradient id="bg-vp" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#022c22"/>
+      <stop offset="100%" stop-color="#064e3b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="url(#bg-vp)"/>
+  <rect x="60" y="60" width="960" height="960" rx="24" fill="none" stroke="#047857" stroke-width="2"/>
+  <text x="540" y="200" font-family="system-ui, sans-serif" font-size="44" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="2">VITALPULSE HEALTH</text>
+  <text x="540" y="260" font-family="system-ui, sans-serif" font-size="24" font-weight="600" fill="#6ee7b7" text-anchor="middle">CLINICAL CARDIAC TELEMETRY</text>
+  <rect x="120" y="340" width="840" height="420" rx="16" fill="#065f46" stroke="#10b981" stroke-width="1.5"/>
+  <text x="540" y="420" font-family="system-ui, sans-serif" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">Continuous 24/7 ECG Cardiac Monitoring</text>
+  <text x="540" y="500" font-family="system-ui, sans-serif" font-size="28" font-weight="800" fill="#fef08a" text-anchor="middle">100% Guaranteed Cure for All Heart Arrhythmias</text>
+  <text x="540" y="580" font-family="system-ui, sans-serif" font-size="26" font-weight="600" fill="#a7f3d0" text-anchor="middle">Zero risk cardiovascular protection for everyone</text>
+  <text x="540" y="660" font-family="system-ui, sans-serif" font-size="24" font-weight="500" fill="#d1fae5" text-anchor="middle">Medical grade clinical sensor suite</text>
+  <rect x="340" y="820" width="400" height="70" rx="35" fill="#047857"/>
+  <text x="540" y="865" font-family="system-ui, sans-serif" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">ORDER TEST MONITOR</text>
+</svg>

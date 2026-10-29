@@ -1,0 +1,8 @@
+{
+  "name": "BrandGuard AI",
+  "description": "Pre-Publication Marketing Governance & Compliance Platform reviewing marketing content against approved brand guidelines, verified facts, and authorized visual assets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

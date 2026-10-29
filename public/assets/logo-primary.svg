@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" width="240" height="60">
+  <rect width="48" height="48" x="6" y="6" rx="12" fill="#0f766e"/>
+  <path d="M 20 30 L 26 36 L 40 22" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="66" y="34" font-family="system-ui, sans-serif" font-size="20" font-weight="800" fill="#111827" letter-spacing="0.5">ACME</text>
+  <text x="66" y="48" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#0f766e" letter-spacing="1">ENTERPRISE</text>
+</svg>

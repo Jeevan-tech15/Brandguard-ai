@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <circle cx="60" cy="60" r="54" fill="#f0fdfa" stroke="#0f766e" stroke-width="4"/>
+  <circle cx="60" cy="60" r="44" fill="#ffffff" stroke="#ccfbf1" stroke-width="2"/>
+  <path d="M 60 28 L 74 38 L 74 62 C 74 76 60 88 60 88 C 60 88 46 76 46 62 L 46 38 Z" fill="#0f766e"/>
+  <path d="M 54 58 L 58 62 L 68 52" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="60" y="102" font-family="system-ui, sans-serif" font-size="9" font-weight="800" fill="#0f766e" text-anchor="middle" letter-spacing="1">SOC-2 TYPE II</text>
+</svg>
