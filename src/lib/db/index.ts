@@ -51,33 +51,40 @@ function getInitialStore(): LocalStoreSchema {
   };
 }
 
+let memoryStore: LocalStoreSchema | null = null;
+
 function readLocalStore(): LocalStoreSchema {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (!fs.existsSync(DATA_FILE)) {
-      const initial = getInitialStore();
-      fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), 'utf-8');
-      return initial;
-    }
-    const data = fs.readFileSync(DATA_FILE, 'utf-8');
-    const parsed = JSON.parse(data);
-    if (!parsed.authorized_assets) parsed.authorized_assets = [];
-    return parsed;
-  } catch {
-    return getInitialStore();
+  if (memoryStore) {
+    return memoryStore;
   }
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const data = fs.readFileSync(DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (!parsed.authorized_assets) parsed.authorized_assets = [];
+      memoryStore = parsed;
+      return parsed;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not read local file store, using memory store:', err);
+  }
+  memoryStore = getInitialStore();
+  return memoryStore;
 }
 
 function writeLocalStore(store: LocalStoreSchema): void {
+  memoryStore = store;
+  // In Vercel or serverless environments, filesystem is read-only; skip disk write
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return;
+  }
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Failed to write local store:', err);
+    console.warn('[DB] Local store disk write bypassed (read-only filesystem):', err instanceof Error ? err.message : err);
   }
 }
 
@@ -996,6 +1003,7 @@ export async function createContentReview(
         compliance_score: null,
         review_version: 1,
         image_url: payload.image_url || null,
+        caption_text: resolvedCaption || null,
         aspect_ratio: payload.aspect_ratio || null,
         image_width: payload.image_width || null,
         image_height: payload.image_height || null,
@@ -1173,6 +1181,10 @@ export async function saveReviewEvaluation(
             suggested_fix: f.suggested_fix || null,
             bounding_box: f.bounding_box || null,
             target_type: f.target_type || 'text',
+            target_scope: f.target_scope || (f.target_type === 'visual_element' ? 'image' : 'caption'),
+            image_evidence: f.image_evidence || null,
+            caption_evidence: f.caption_evidence || null,
+            proposed_replacement: f.proposed_replacement || null,
             resolution_status: f.resolution_status || 'unresolved',
             created_at: now,
           }));

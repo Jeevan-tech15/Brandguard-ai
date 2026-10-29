@@ -12,6 +12,7 @@ import {
 } from './image-first-analyzer';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import sharp from 'sharp';
 
@@ -135,7 +136,7 @@ export async function loadImageBuffer(imageUrl: string): Promise<{ buffer: Buffe
       } catch { }
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+      const timeout = setTimeout(() => controller.abort(), 5000);
       try {
         const res = await fetch(imageUrl, { signal: controller.signal });
         clearTimeout(timeout);
@@ -269,7 +270,7 @@ interface TesseractRecognizeResult {
 
 async function runLocalTesseractOCR(
   buffer: Buffer,
-  timeoutMs: number = 40000
+  timeoutMs: number = 15000
 ): Promise<LocalOcrResult> {
   const emptyResult: LocalOcrResult = {
     text: '',
@@ -292,49 +293,40 @@ async function runLocalTesseractOCR(
       const imgH = meta.height || 1000;
 
       const { createWorker, PSM } = await import('tesseract.js');
+
+      // Writable cache directory (essential for Vercel/serverless read-only filesystem)
+      const cacheDir = path.join(os.tmpdir(), 'brandguard-ocr');
+      try {
+        if (!fs.existsSync(cacheDir)) {
+          fs.mkdirSync(cacheDir, { recursive: true });
+        }
+      } catch { }
+
       const candidateDirs = [
         process.cwd(),
         path.join(process.cwd(), 'public'),
         path.resolve(__dirname, '..', '..', '..'),
+        path.resolve(__dirname, '..', '..', '..', '..'),
       ];
-      let trainedDataDir = process.cwd();
+      let langPath = process.cwd();
       for (const d of candidateDirs) {
         if (fs.existsSync(path.join(d, 'eng.traineddata'))) {
-          trainedDataDir = d;
+          langPath = d;
           break;
         }
       }
-
-      let resolvedWorkerPath: string | undefined;
-      let resolvedCorePath: string | undefined;
-      try {
-        const tessPkg = require.resolve('tesseract.js/package.json');
-        const candidate = path.join(path.dirname(tessPkg), 'src', 'worker-script', 'node', 'index.js');
-        if (fs.existsSync(candidate)) resolvedWorkerPath = candidate;
-      } catch { }
-      if (!resolvedWorkerPath) {
-        const directCandidate = path.join(process.cwd(), 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js');
-        if (fs.existsSync(directCandidate)) resolvedWorkerPath = directCandidate;
+      if (!fs.existsSync(path.join(langPath, 'eng.traineddata'))) {
+        langPath = 'https://tessdata.projectnaptha.com/4.0.0';
       }
 
-      try {
-        const corePkg = require.resolve('tesseract.js-core/package.json');
-        const candidate = path.dirname(corePkg);
-        if (fs.existsSync(candidate)) resolvedCorePath = candidate;
-      } catch { }
-      if (!resolvedCorePath) {
-        const directCore = path.join(process.cwd(), 'node_modules', 'tesseract.js-core');
-        if (fs.existsSync(directCore)) resolvedCorePath = directCore;
-      }
-
-      worker = await createWorker('eng', 1, {
-        workerPath: resolvedWorkerPath,
-        corePath: resolvedCorePath,
-        cachePath: trainedDataDir,
-        langPath: trainedDataDir,
+      const workerOptions: Record<string, unknown> = {
+        cachePath: cacheDir,
+        langPath,
         gzip: false,
-        errorHandler: (e: unknown) => console.warn('Tesseract worker error:', e),
-      });
+        errorHandler: (e: unknown) => console.warn('[Local OCR] Worker notice:', e),
+      };
+
+      worker = await createWorker('eng', 1, workerOptions);
 
       if (!worker) return emptyResult;
 
@@ -833,12 +825,13 @@ If there are no violations, return { "extracted_ocr_text": "...", "logo_detectio
           mimeType = 'image/png';
         }
       }
-      const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+      const preferredModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const candidateModels = [preferredModel, 'gemini-1.5-flash'].filter((v, i, a) => a.indexOf(v) === i);
       let rawText = '';
 
       for (const m of candidateModels) {
         try {
-          const timeoutSignal = AbortSignal.timeout(12000);
+          const timeoutSignal = AbortSignal.timeout(8000);
           const response = await ai.models.generateContent({
             model: m,
             contents: {
@@ -868,8 +861,8 @@ If there are no violations, return { "extracted_ocr_text": "...", "logo_detectio
         } catch (mErr: unknown) {
           const errMsg = mErr instanceof Error ? mErr.message : String(mErr);
           console.warn(`[Gemini Vision] Model ${m} note:`, errMsg);
-          if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-            disclosures.push(`Gemini vision quota limit reached; executed full local analysis.`);
+          if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota')) {
+            disclosures.push(`Gemini vision quota limit reached (HTTP 429); executed full local analysis.`);
             break;
           }
           if (errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('API_KEY_INVALID')) {
@@ -877,7 +870,7 @@ If there are no violations, return { "extracted_ocr_text": "...", "logo_detectio
             break;
           }
           if (errMsg.includes('timeout') || errMsg.includes('AbortError')) {
-            disclosures.push(`Gemini vision request timed out; executed full local analysis.`);
+            disclosures.push(`Gemini vision request timed out (8s limit reached); executed full local analysis.`);
             break;
           }
         }
