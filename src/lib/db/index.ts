@@ -946,6 +946,21 @@ export async function getAugmentedActiveGuidelinesAndAssets() {
   return { guidelines, facts, assets, profile };
 }
 
+export function isMissingColumnError(
+  error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined
+): boolean {
+  if (!error) return false;
+  // PostgreSQL 42703: undefined_column
+  // PostgREST PGRST204: column not found in schema cache
+  if (error.code === '42703' || error.code === 'PGRST204') return true;
+  const msg = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase();
+  return (
+    (msg.includes('column') &&
+      (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find'))) ||
+    msg.includes('undefined_column')
+  );
+}
+
 export async function createContentReview(
   payload: CreateReviewPayload,
   options?: { skipEvaluation?: boolean; ocrReferenceText?: string }
@@ -1014,7 +1029,38 @@ export async function createContentReview(
       const { data, error } = await supabase.from('content_reviews').insert(fullInsert).select().single();
 
       if (error) {
-        const baseInsert = {
+        // Requirement 1: Log actual error message without printing secrets
+        const safeErrorMsg = error.message || error.code || 'Unknown database insert error';
+        console.warn(`[DB] Supabase full review insert failed: ${safeErrorMsg}`);
+
+        // Requirement 2: Distinguish a missing optional column from other database errors
+        const isColumnMissing = isMissingColumnError(error);
+        if (!isColumnMissing) {
+          store.content_reviews = store.content_reviews.filter((r) => r.id !== createdReviewId);
+          writeLocalStore(store);
+          throw new Error(`Database insert failed: ${safeErrorMsg}`);
+        }
+
+        // Check if the missing column is the mandatory image_url
+        const errorDetails = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+        const isImageUrlMissing = Boolean(
+          payload.image_url && (errorDetails.includes('image_url') || errorDetails.includes("'image_url'"))
+        );
+
+        if (isImageUrlMissing) {
+          // Requirement 4: If database cannot preserve image URL, return clear error
+          console.error('[DB] Remote schema lacks mandatory image_url column. Cannot preserve creative image.');
+          store.content_reviews = store.content_reviews.filter((r) => r.id !== createdReviewId);
+          writeLocalStore(store);
+          throw new Error(
+            `Database schema is missing 'image_url' column; cannot save creative review without losing image URL: ${safeErrorMsg}`
+          );
+        }
+
+        // Requirement 3: Never silently create a review that loses its image_url.
+        // Fallback: omit optional extended columns (caption_text, aspect_ratio, image_width, image_height)
+        // but ALWAYS preserve image_url
+        const fallbackInsert = {
           id: createdReviewId,
           title: payload.title.trim(),
           content_text: rawCopy,
@@ -1022,10 +1068,27 @@ export async function createContentReview(
           status: initialStatus,
           compliance_score: null,
           review_version: 1,
+          image_url: payload.image_url || null,
           created_at: now,
           updated_at: now,
         };
-        await supabase.from('content_reviews').insert(baseInsert);
+
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('content_reviews')
+          .insert(fallbackInsert)
+          .select()
+          .single();
+
+        if (fallbackError) {
+          // Requirement 4: If fallback fails, return a clear error instead of pretending it saved
+          const fallbackMsg = fallbackError.message || fallbackError.code || 'Unknown fallback error';
+          console.error(`[DB] Fallback review insert failed: ${fallbackMsg}`);
+          store.content_reviews = store.content_reviews.filter((r) => r.id !== createdReviewId);
+          writeLocalStore(store);
+          throw new Error(`Database cannot preserve creative review with image URL: ${fallbackMsg}`);
+        } else if (fallbackData) {
+          createdReviewId = fallbackData.id;
+        }
       } else if (data) {
         createdReviewId = data.id;
       }
