@@ -10,11 +10,24 @@ import {
   auditImageBrandAndMarketingClaims,
   auditImageCopyrightAndIpRisks,
 } from './image-first-analyzer';
-import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import sharp from 'sharp';
+
+export function buildGeminiUrl(customUrl: string | undefined, model: string, apiKey: string): string {
+  if (!customUrl) {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  }
+  const trimmed = customUrl.trim().replace(/\/+$/, '');
+  if (trimmed.includes(':generateContent')) {
+    if (trimmed.includes('key=') || !apiKey) return trimmed;
+    const separator = trimmed.includes('?') ? '&' : '?';
+    return `${trimmed}${separator}key=${apiKey}`;
+  }
+  const baseHost = trimmed.endsWith('/v1beta') ? trimmed.slice(0, -'/v1beta'.length) : trimmed;
+  return `${baseHost}/v1beta/models/${model}:generateContent${apiKey ? `?key=${apiKey}` : ''}`;
+}
 
 export interface VisionAnalysisResult {
   visionRun: boolean;
@@ -462,7 +475,7 @@ async function runLocalTesseractOCR(
       let ret2: TesseractRecognizeResult | null = null;
       let badgeW = imgW;
       let badgeH = imgH;
-      const needsBadgePass = true; // High-precision badge inspection runs in ~1.5s to ensure complete creative coverage
+      const needsBadgePass = latestOcrResult.wordsCount < 3 || latestOcrResult.text.length < 8; // Targeted inspection when primary pass has low text density
 
       if (needsBadgePass) {
         try {
@@ -678,7 +691,22 @@ export async function runVisionAnalysis({
       visionRun: false,
       reason: `Could not load image data from "${imageUrl}". Check that the file exists and is accessible.`,
       extracted_ocr_text: '',
-      findings: [],
+      findings: [
+        {
+          category: 'other_visible_issues',
+          severity: 'critical',
+          finding_title: 'Inaccessible Creative Graphic',
+          explanation: `The uploaded creative asset at "${imageUrl}" could not be accessed or read by the server. Ensure the creative image file exists and is publicly accessible.`,
+          evidence_text: imageUrl,
+          confidence: 1.0,
+          suggested_fix: 'Re-upload the creative image file to ensure an accessible storage URL.',
+          source: 'image',
+          verification_status: 'unverifiable',
+          target_type: 'visual_element',
+          target_scope: 'image',
+          resolution_status: 'unresolved',
+        },
+      ],
       disclosures: ['Creative image was inaccessible for server-side inspection.'],
       logoPresence: {
         status: 'uncertain',
@@ -711,20 +739,14 @@ export async function runVisionAnalysis({
     console.warn('Sharp metadata extraction issue:', err);
   }
 
-  // 4. Local OCR Extraction & Heuristic Engine (Always executed to guarantee reliable baseline)
-  console.log(`[OCR Pipeline] Processing creative image: "${imageUrl}" (buffer size: ${loaded.buffer.length} bytes)`);
-  let ocrResult: LocalOcrResult;
-  if (loaded.mimeType === 'image/svg+xml') {
-    ocrResult = extractSvgText(loaded.buffer.toString('utf-8'));
-  } else {
-    ocrResult = await runLocalTesseractOCR(loaded.buffer);
-  }
-  console.log(`[OCR Pipeline] Extracted ${ocrResult.linesCount} lines (${ocrResult.wordsCount} words) from "${imageUrl}"`);
-
-  if (imageSummary) {
-    imageSummary.hasLegibleTypography = ocrResult.text.length > 0;
-    imageSummary.textLineCount = ocrResult.linesCount;
-  }
+  let ocrResult: LocalOcrResult = {
+    text: '',
+    confidence: null,
+    wordsCount: 0,
+    linesCount: 0,
+    unreadableCount: 0,
+    boundingBoxes: [],
+  };
 
   let visionRun = false;
   let visionModelUsed = loaded.mimeType === 'image/svg+xml' ? 'svg-xml-dom' : 'tesseract-wasm';
@@ -734,9 +756,19 @@ export async function runVisionAnalysis({
   let geminiExtractedOcr = '';
   let geminiLogoPresence: LogoPresenceResult | undefined;
 
-  // 5. Cloud Vision Analysis via Gemini when genuine API key or custom endpoint is configured
+  // 4. Cloud Multimodal Vision Analysis via Gemini when API key or custom endpoint is configured
   if (!skipAI && (apiKey || customApiUrl)) {
-    const base64Data = loaded.buffer.toString('base64');
+    let base64Data = loaded.buffer.toString('base64');
+    let mimeType = loaded.mimeType;
+    if (loaded.mimeType === 'image/svg+xml') {
+      try {
+        const pngBuf = await sharp(loaded.buffer).png().toBuffer();
+        base64Data = pngBuf.toString('base64');
+        mimeType = 'image/png';
+      } catch {
+        mimeType = 'image/png';
+      }
+    }
     const prompt = `You are BrandGuard AI's lead creative governance vision inspector.
 Analyze this uploaded marketing creative image independently for visible defects, typography quality, brand policy violations, and compliance issues.
 
@@ -806,72 +838,72 @@ If no logo is detected, set logo_detection.present to false and type to "none". 
 If there are no violations, return { "extracted_ocr_text": "...", "logo_detection": { ... }, "findings": [] }.`;
 
     try {
-      const ai = new GoogleGenAI({
-        apiKey: apiKey || 'unspecified-key',
-        httpOptions: {
-          headers: { 'User-Agent': 'aistudio-build' },
-          ...(customApiUrl ? { baseUrl: customApiUrl.replace(/\/+$/, '') } : {}),
-        },
-      });
-
-      let base64Data = loaded.buffer.toString('base64');
-      let mimeType = loaded.mimeType;
-      if (loaded.mimeType === 'image/svg+xml') {
-        try {
-          const pngBuf = await sharp(loaded.buffer).png().toBuffer();
-          base64Data = pngBuf.toString('base64');
-          mimeType = 'image/png';
-        } catch {
-          mimeType = 'image/png';
-        }
-      }
-      const preferredModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-      const candidateModels = [preferredModel, 'gemini-1.5-flash'].filter((v, i, a) => a.indexOf(v) === i);
+      const preferredModel = process.env.GEMINI_MODEL;
+      const candidateModels = [
+        preferredModel,
+        'gemini-flash-lite-latest',
+        'gemini-3.5-flash',
+        'gemini-3.8-flash',
+      ].filter((v, i, a): v is string => Boolean(v) && a.indexOf(v) === i);
       let rawText = '';
 
       for (const m of candidateModels) {
         try {
-          const timeoutSignal = AbortSignal.timeout(8000);
-          const response = await ai.models.generateContent({
-            model: m,
-            contents: {
-              parts: [
+          const timeoutSignal = AbortSignal.timeout(12000);
+          const url = buildGeminiUrl(customApiUrl, m, apiKey || '');
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
                 {
-                  inlineData: {
-                    mimeType,
-                    data: base64Data,
-                  },
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType,
+                        data: base64Data,
+                      },
+                    },
+                    { text: prompt },
+                  ],
                 },
-                { text: prompt },
               ],
-            },
-            config: {
-              temperature: 0.1,
-              responseMimeType: 'application/json',
-              abortSignal: timeoutSignal,
-            },
+              generationConfig: {
+                temperature: 0.1,
+                responseMimeType: 'application/json',
+              },
+            }),
+            signal: timeoutSignal,
           });
-          if (response?.text) {
-            rawText = response.text;
-            visionModelUsed = m;
-            visionProvider = 'Google Gemini Vision';
-            visionRun = true;
-            break;
+
+          if (response.ok) {
+            const data = await response.json();
+            const partText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (partText) {
+              rawText = partText;
+              visionModelUsed = m;
+              visionProvider = 'Google Gemini Vision';
+              visionRun = true;
+              break;
+            }
+          } else {
+            const errBody = await response.text().catch(() => '');
+            console.warn(`[Gemini Vision] Model ${m} returned HTTP ${response.status}: ${errBody.slice(0, 120)}`);
+            if (response.status === 429) {
+              disclosures.push(`Gemini vision quota limit reached (HTTP 429); executed full local analysis.`);
+              continue;
+            }
+            if (response.status === 401 || response.status === 403) {
+              disclosures.push(`Gemini vision authentication failed; executed full local analysis.`);
+              break;
+            }
           }
         } catch (mErr: unknown) {
           const errMsg = mErr instanceof Error ? mErr.message : String(mErr);
           console.warn(`[Gemini Vision] Model ${m} note:`, errMsg);
-          if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota')) {
-            disclosures.push(`Gemini vision quota limit reached (HTTP 429); executed full local analysis.`);
-            break;
-          }
-          if (errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('API_KEY_INVALID')) {
-            disclosures.push(`Gemini vision authentication failed; executed full local analysis.`);
-            break;
-          }
           if (errMsg.includes('timeout') || errMsg.includes('AbortError')) {
-            disclosures.push(`Gemini vision request timed out (8s limit reached); executed full local analysis.`);
-            break;
+            disclosures.push(`Gemini vision request timed out (10s limit reached); executed full local analysis.`);
+            continue;
           }
         }
       }
@@ -883,15 +915,33 @@ If there are no violations, return { "extracted_ocr_text": "...", "logo_detectio
           findings?: Record<string, unknown>[];
         } = {};
         try {
-          parsed = JSON.parse(rawText);
+          let cleaned = rawText.trim();
+          if (cleaned.startsWith('```json')) {
+            cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
+          } else if (cleaned.startsWith('```')) {
+            cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+          parsed = JSON.parse(cleaned);
         } catch {
           const jsonMatch = rawText.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
-            parsed = JSON.parse(jsonMatch[0]);
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+            } catch { }
           }
         }
 
         geminiExtractedOcr = cleanAndNormalizeOcrText(parsed.extracted_ocr_text || '');
+        if (geminiExtractedOcr.trim().length > 0) {
+          ocrResult = {
+            text: geminiExtractedOcr,
+            confidence: 95,
+            wordsCount: geminiExtractedOcr.split(/\s+/).filter(Boolean).length,
+            linesCount: geminiExtractedOcr.split('\n').filter(Boolean).length,
+            unreadableCount: 0,
+            boundingBoxes: [],
+          };
+        }
         const rawFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
 
         // Parse structured logo detection from Gemini multimodal vision
@@ -1039,8 +1089,19 @@ If there are no violations, return { "extracted_ocr_text": "...", "logo_detectio
     }
   }
 
+  // 5. Local OCR Extraction & Heuristic Engine (Executed when cloud vision is unavailable or yielded no text)
+  if (!ocrResult.text || ocrResult.text.trim().length === 0) {
+    console.log(`[OCR Pipeline] Processing creative image: "${imageUrl}" (buffer size: ${loaded.buffer.length} bytes) via local engine`);
+    if (loaded.mimeType === 'image/svg+xml') {
+      ocrResult = extractSvgText(loaded.buffer.toString('utf-8'));
+    } else {
+      ocrResult = await runLocalTesseractOCR(loaded.buffer);
+    }
+    console.log(`[OCR Pipeline] Extracted ${ocrResult.linesCount} lines (${ocrResult.wordsCount} words) from "${imageUrl}"`);
+  }
+
   // Combine OCR text: use richer transcript, preserving line breaks
-  const finalExtractedText = (geminiExtractedOcr && geminiExtractedOcr.length > ocrResult.text.length)
+  const finalExtractedText = (geminiExtractedOcr && geminiExtractedOcr.length >= ocrResult.text.length)
     ? geminiExtractedOcr
     : (ocrResult.text || geminiExtractedOcr || '');
 

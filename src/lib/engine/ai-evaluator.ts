@@ -1,5 +1,6 @@
 import { BrandGuideline, ApprovedFact, RuleSeverity } from '@/lib/types';
 import { EngineFinding } from './types';
+import { buildGeminiUrl } from './vision-analyzer';
 
 export interface AIEvaluationResult {
   aiRun: boolean;
@@ -61,84 +62,84 @@ ${content}
 
 Return ONLY a valid JSON array of finding objects, without markdown codeblock wrapper or additional conversational text. If there are no violations, return an empty array [].`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const preferredModel = process.env.GEMINI_MODEL;
+  const candidateModels = [
+    preferredModel,
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+  ].filter((m): m is string => Boolean(m) && typeof m === 'string');
 
-  try {
-    let url: string;
-    if (customApiUrl) {
-      if (customApiUrl.includes(':generateContent')) {
-        url = customApiUrl.includes('key=') || !apiKey
-          ? customApiUrl
-          : `${customApiUrl}${customApiUrl.includes('?') ? '&' : '?'}key=${apiKey}`;
-      } else {
-        const trimmed = customApiUrl.replace(/\/+$/, '');
-        url = `${trimmed}/v1beta/models/gemini-2.5-flash:generateContent${apiKey ? `?key=${apiKey}` : ''}`;
+  let lastError = '';
+  for (const m of candidateModels) {
+    const controller = new AbortController();
+    const perModelTimeout = Math.min(timeoutMs, 12000);
+    const timeoutId = setTimeout(() => controller.abort(), perModelTimeout);
+
+    try {
+      const url = buildGeminiUrl(customApiUrl, m, apiKey || '');
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        lastError = `Gemini API model ${m} returned status ${res.status}: ${errText.slice(0, 150)}`;
+        if (res.status === 429 || res.status === 404) continue;
+        continue;
       }
-    } else {
-      url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    }
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-        },
-      }),
-      signal: controller.signal,
-    });
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    clearTimeout(timeoutId);
+      if (!rawText) {
+        return {
+          aiRun: true,
+          provider: 'Google Gemini',
+          model: m,
+          findings: [],
+        };
+      }
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return {
-        aiRun: false,
-        reason: `Gemini API returned status ${res.status}: ${errText.slice(0, 150)}`,
-        findings: [],
-      };
-    }
+      // Parse and validate strictly
+      const rawFindings = parseJsonResilient(rawText);
+      const validatedFindings = validateAndSanitizeFindings(
+        rawFindings,
+        content,
+        activeGuidelines,
+        activeFacts
+      );
 
-    const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!rawText) {
       return {
         aiRun: true,
         provider: 'Google Gemini',
-        model: 'gemini-2.5-flash',
-        findings: [],
+        model: m,
+        findings: validatedFindings,
       };
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+      const message = err instanceof Error ? err.message : 'Unknown AI evaluation failure';
+      lastError = `Model ${m} failure: ${message}`;
     }
-
-    // Parse and validate strictly
-    const rawFindings = parseJsonResilient(rawText);
-    const validatedFindings = validateAndSanitizeFindings(
-      rawFindings,
-      content,
-      activeGuidelines,
-      activeFacts
-    );
-
-    return {
-      aiRun: true,
-      provider: 'Google Gemini',
-      model: 'gemini-2.5-flash',
-      findings: validatedFindings,
-    };
-  } catch (err: unknown) {
-    clearTimeout(timeoutId);
-    const message = err instanceof Error ? err.message : 'Unknown AI evaluation failure';
-    return {
-      aiRun: false,
-      reason: `AI evaluation encountered an error (${message}); fell back to deterministic checks.`,
-      findings: [],
-    };
   }
+
+  return {
+    aiRun: false,
+    reason: `AI evaluation encountered an issue (${lastError || 'all models exhausted'}); fell back to deterministic checks.`,
+    findings: [],
+  };
 }
 
 // -------------------------------------------------------------

@@ -1033,9 +1033,16 @@ export async function createContentReview(
         const safeErrorMsg = error.message || error.code || 'Unknown database insert error';
         console.warn(`[DB] Supabase full review insert failed: ${safeErrorMsg}`);
 
+        // Check if error is due to check constraint on status (e.g. legacy database schema where 'draft' is not in check enum)
+        const isStatusConstraint = isDraft && (
+          safeErrorMsg.includes('status_check') ||
+          safeErrorMsg.includes('check constraint') ||
+          Boolean(error.details && error.details.includes('status'))
+        );
+
         // Requirement 2: Distinguish a missing optional column from other database errors
         const isColumnMissing = isMissingColumnError(error);
-        if (!isColumnMissing) {
+        if (!isColumnMissing && !isStatusConstraint) {
           store.content_reviews = store.content_reviews.filter((r) => r.id !== createdReviewId);
           writeLocalStore(store);
           throw new Error(`Database insert failed: ${safeErrorMsg}`);
@@ -1060,12 +1067,13 @@ export async function createContentReview(
         // Requirement 3: Never silently create a review that loses its image_url.
         // Fallback: omit optional extended columns (caption_text, aspect_ratio, image_width, image_height)
         // but ALWAYS preserve image_url
+        const fallbackStatus: ReviewStatus = isStatusConstraint ? 'pending' : initialStatus;
         const fallbackInsert = {
           id: createdReviewId,
           title: payload.title.trim(),
           content_text: rawCopy,
           content_type: payload.content_type,
-          status: initialStatus,
+          status: fallbackStatus,
           compliance_score: null,
           review_version: 1,
           image_url: payload.image_url || null,
